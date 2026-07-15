@@ -477,7 +477,7 @@ footer{position:relative;z-index:1;padding:1.8rem 2.5rem;border-top:1px solid va
         <a class="contact-link reveal" style="cursor:default;pointer-events:none"><span class="contact-link-icon">&#128205;</span>State College, PA, USA</a>
       </div>
     </div>
-    <form class="contact-form reveal" action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+    <form class="contact-form reveal" id="contact-form" onsubmit="return sendContactMail(event)">
       <div class="form-group"><label class="form-label" for="c-name">Name</label><input class="form-input" type="text" id="c-name" name="name" placeholder="Your name" required/></div>
       <div class="form-group"><label class="form-label" for="c-email">Email</label><input class="form-input" type="email" id="c-email" name="email" placeholder="your@email.com" required/></div>
       <div class="form-group"><label class="form-label" for="c-msg">Message</label><textarea class="form-textarea" id="c-msg" name="message" placeholder="Your message..." required></textarea></div>
@@ -580,7 +580,45 @@ function save(k, v) {
   localStorage.setItem(k, JSON.stringify(v));
 }
 
-function openAdmin() {
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) {
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+  });
+}
+function safeUrl(u) {
+  u = String(u == null ? "" : u).trim();
+  if (!u) return "";
+  if (/^(https?:|mailto:)/i.test(u)) return u;
+  if (u.indexOf(":") === -1) return u;
+  return "";
+}
+
+function sendContactMail(e) {
+  e.preventDefault();
+  var name = document.getElementById("c-name").value.trim();
+  var email = document.getElementById("c-email").value.trim();
+  var msg = document.getElementById("c-msg").value.trim();
+  var subject = "Portfolio contact from " + name;
+  var body = msg + "\n\n---\nFrom: " + name + " <" + email + ">";
+  window.location.href = "mailto:sohan.shahedhossain@gmail.com" +
+    "?subject=" + encodeURIComponent(subject) +
+    "&body=" + encodeURIComponent(body);
+  return false;
+}
+
+var ADMIN_HASH = "3e02c142886df610457afe955972db45d2a1d3dc35abd8ab67655f0c7b27e2a4";
+async function sha256Hex(str) {
+  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.prototype.map.call(new Uint8Array(buf), function(b) { return b.toString(16).padStart(2, "0"); }).join("");
+}
+async function openAdmin() {
+  if (sessionStorage.getItem("admin_unlocked") !== "1") {
+    var pass = prompt("Enter admin passphrase:");
+    if (pass === null) return;
+    var hash = await sha256Hex(pass);
+    if (hash !== ADMIN_HASH) { alert("Incorrect passphrase."); return; }
+    sessionStorage.setItem("admin_unlocked", "1");
+  }
   document.getElementById("admin-overlay").classList.add("open");
   renderAdminLists();
   document.body.style.overflow = "hidden";
@@ -642,15 +680,16 @@ function renderFeed() {
     (function(it) {
       card.onclick = function() { openModal(it); };
     })(item);
-    var imgHtml = item.img
-      ? '<img src="' + item.img + '" alt="" class="feed-card-img"/>'
-      : '<div class="feed-card-img-placeholder">[ ' + item.type + ' ]</div>';
+    var imgUrl = safeUrl(item.img);
+    var imgHtml = imgUrl
+      ? '<img src="' + esc(imgUrl) + '" alt="" class="feed-card-img"/>'
+      : '<div class="feed-card-img-placeholder">[ ' + esc(item.type) + ' ]</div>';
     card.innerHTML = imgHtml +
       '<div class="feed-card-body">' +
-      '<div class="feed-card-type">' + item.type + '</div>' +
-      '<div class="feed-card-title">' + item.title + '</div>' +
-      '<div class="feed-card-excerpt">' + (item.excerpt || "") + '</div>' +
-      '<div class="feed-card-date">' + formatDate(item.date) + '</div>' +
+      '<div class="feed-card-type">' + esc(item.type) + '</div>' +
+      '<div class="feed-card-title">' + esc(item.title) + '</div>' +
+      '<div class="feed-card-excerpt">' + esc(item.excerpt || "") + '</div>' +
+      '<div class="feed-card-date">' + esc(formatDate(item.date)) + '</div>' +
       '</div>';
     c.insertBefore(card, empty);
   }
@@ -696,10 +735,10 @@ function renderResearch() {
     var sc = item.status === "ongoing" ? "status-ongoing" : "status-complete";
     var sl = item.status === "ongoing" ? "Ongoing" : "Completed";
     d.innerHTML =
-      '<div class="research-card-tag">' + (item.tag || "Research") + '</div>' +
-      '<div class="research-card-title">' + item.title + '</div>' +
-      '<p class="research-card-desc">' + item.desc + '</p>' +
-      '<span class="research-card-status ' + sc + '">' + sl + '</span>';
+      '<div class="research-card-tag">' + esc(item.tag || "Research") + '</div>' +
+      '<div class="research-card-title">' + esc(item.title) + '</div>' +
+      '<p class="research-card-desc">' + esc(item.desc) + '</p>' +
+      '<span class="research-card-status ' + sc + '">' + esc(sl) + '</span>';
     g.appendChild(d);
   }
   c.appendChild(g);
@@ -740,11 +779,12 @@ function renderPublications() {
     var item = arr[i];
     var el = document.createElement("div");
     el.className = "pub-item pub-dyn";
+    var doiUrl = safeUrl(item.doi);
     el.innerHTML =
-      '<div class="pub-title">' + item.title + '</div>' +
-      '<div class="pub-authors">' + (item.authors || "") + '</div>' +
-      '<div class="pub-journal">' + (item.journal || "") + '</div>' +
-      (item.doi ? '<div class="pub-links"><a href="' + item.doi + '" target="_blank" class="pub-link">DOI / Link &nearr;</a></div>' : "");
+      '<div class="pub-title">' + esc(item.title) + '</div>' +
+      '<div class="pub-authors">' + esc(item.authors || "") + '</div>' +
+      '<div class="pub-journal">' + esc(item.journal || "") + '</div>' +
+      (doiUrl ? '<div class="pub-links"><a href="' + esc(doiUrl) + '" target="_blank" rel="noopener noreferrer" class="pub-link">DOI / Link &nearr;</a></div>' : "");
     c.insertBefore(el, c.firstChild);
   }
 }
@@ -788,10 +828,10 @@ function renderActivities() {
     var d = document.createElement("div");
     d.className = "activity-card";
     d.innerHTML =
-      '<div class="activity-org">' + (item.org || "Activity") + '</div>' +
-      '<div class="activity-role">' + item.role + '</div>' +
-      '<div class="activity-period">' + (item.period || "") + '</div>' +
-      '<p class="activity-desc">' + (item.desc || "") + '</p>';
+      '<div class="activity-org">' + esc(item.org || "Activity") + '</div>' +
+      '<div class="activity-role">' + esc(item.role) + '</div>' +
+      '<div class="activity-period">' + esc(item.period || "") + '</div>' +
+      '<p class="activity-desc">' + esc(item.desc || "") + '</p>';
     g.appendChild(d);
   }
   c.appendChild(g);
@@ -818,9 +858,9 @@ function rAList(cid, arr, dFn, tFn, mFn) {
   for (var i = 0; i < arr.length; i++) {
     var item = arr[i];
     html += '<div class="admin-list-item">' +
-      '<div><div class="admin-list-item-title">' + tFn(item) + '</div>' +
-      '<div class="admin-list-item-meta">' + mFn(item) + '</div></div>' +
-      '<button class="admin-btn admin-btn-danger" onclick="' + dFn.name + '(' + item.id + ')">Delete</button>' +
+      '<div><div class="admin-list-item-title">' + esc(tFn(item)) + '</div>' +
+      '<div class="admin-list-item-meta">' + esc(mFn(item)) + '</div></div>' +
+      '<button class="admin-btn admin-btn-danger" onclick="' + dFn.name + '(' + Number(item.id) + ')">Delete</button>' +
       '</div>';
   }
   el.innerHTML = html;
@@ -831,7 +871,8 @@ function openModal(item) {
   document.getElementById("modal-title").textContent = item.title || "";
   document.getElementById("modal-meta").textContent = formatDate(item.date) || "";
   var img = document.getElementById("modal-img");
-  if (item.img) { img.src = item.img; img.style.display = "block"; }
+  var modalImgUrl = safeUrl(item.img);
+  if (modalImgUrl) { img.src = modalImgUrl; img.style.display = "block"; }
   else { img.style.display = "none"; }
   document.getElementById("modal-body").textContent = item.content || item.desc || "";
   document.getElementById("modal-overlay").classList.add("open");
